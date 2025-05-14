@@ -1,0 +1,585 @@
+# E-commerce Backend Database Documentation
+
+## Database Schema Overview
+
+This document provides detailed documentation for the database schema of the e-commerce backend API. The database is organized into several modules to support all aspects of an e-commerce platform.
+
+## Table of Contents
+
+1. [Authentication Module](#authentication-module)
+2. [Products Module](#products-module)
+3. [Orders Module](#orders-module)
+4. [Payments Module](#payments-module)
+5. [Shipping Module](#shipping-module)
+6. [Analytics Module](#analytics-module)
+7. [Database Relationships](#database-relationships)
+8. [Indexing Strategy](#indexing-strategy)
+9. [Data Migration Strategy](#data-migration-strategy)
+
+---
+
+## Authentication Module
+
+### User
+
+**Table Name**: `authentication_user`
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | Integer | PK, Auto-increment | Unique identifier |
+| username | Varchar(150) | Unique | User's username |
+| email | Varchar(254) | Unique, Not Null | User's email address |
+| password | Varchar(128) | Not Null | Hashed password |
+| first_name | Varchar(150) | | User's first name |
+| last_name | Varchar(150) | | User's last name |
+| phone | Varchar(15) | | User's phone number |
+| is_staff_member | Boolean | Default: False | Flag for staff access |
+| is_active | Boolean | Default: True | Flag for active account |
+| is_staff | Boolean | Default: False | Flag for admin site access |
+| is_superuser | Boolean | Default: False | Flag for superuser access |
+| date_joined | DateTime | Auto | Date user was created |
+| last_login | DateTime | Nullable | Last login timestamp |
+| additional_details | JSON | Default: {} | Dynamic additional user data |
+
+**Indexes**:
+- Primary Key: `id`
+- Unique Index: `username`
+- Unique Index: `email`
+
+**Description**: Extends Django's AbstractUser model to store user authentication information and profile details. The additional_details JSON field allows for storing dynamic user attributes without schema modifications.
+
+### Address
+
+**Table Name**: `authentication_address`
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | Integer | PK, Auto-increment | Unique identifier |
+| user_id | Integer | FK(authentication_user.id), Not Null | User this address belongs to |
+| address_line1 | Varchar(255) | Not Null | Primary address line |
+| address_line2 | Varchar(255) | Nullable | Secondary address line |
+| city | Varchar(100) | Not Null | City name |
+| state | Varchar(100) | Not Null | State/province/region |
+| country | Varchar(100) | Not Null | Country name |
+| postal_code | Varchar(20) | Not Null | ZIP/Postal code |
+| is_default | Boolean | Default: False | Flag for default address |
+
+**Indexes**:
+- Primary Key: `id`
+- Index: `user_id`
+
+**Description**: Stores multiple addresses for users, which can be used for shipping or billing purposes.
+
+---
+
+## Products Module
+
+### Category
+
+**Table Name**: `products_category`
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | Integer | PK, Auto-increment | Unique identifier |
+| name | Varchar(100) | Not Null | Category name |
+| slug | Varchar(120) | Unique, Not Null | URL-friendly name |
+| description | Text | Nullable | Category description |
+| parent_id | Integer | FK(products_category.id), Nullable | Parent category reference |
+| image | Varchar(100) | Nullable | Category image path |
+| created_at | DateTime | Auto | Creation timestamp |
+| updated_at | DateTime | Auto | Last update timestamp |
+
+**Indexes**:
+- Primary Key: `id`
+- Unique Index: `slug`
+- Index: `parent_id`
+
+**Description**: Hierarchical structure for product categories, allowing for nested subcategories.
+
+### Product
+
+**Table Name**: `products_product`
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | Integer | PK, Auto-increment | Unique identifier |
+| name | Varchar(255) | Not Null | Product name |
+| slug | Varchar(280) | Unique, Not Null | URL-friendly name |
+| description | Text | Not Null | Product description |
+| price | Decimal(10,2) | Not Null | Regular price |
+| compare_price | Decimal(10,2) | Nullable | Original/compare-at price |
+| cost_price | Decimal(10,2) | Nullable | Cost to business |
+| is_active | Boolean | Default: True | Product visibility |
+| sku | Varchar(50) | Unique, Not Null | Stock keeping unit |
+| stock_quantity | Integer | Default: 0 | Current stock level |
+| low_stock_threshold | Integer | Default: 10 | Low stock alert level |
+| weight | Decimal(8,2) | Nullable | Product weight |
+| created_at | DateTime | Auto | Creation timestamp |
+| updated_at | DateTime | Auto | Last update timestamp |
+
+**Indexes**:
+- Primary Key: `id`
+- Unique Index: `slug`
+- Unique Index: `sku`
+- Index: `name`
+- Index: `price`
+- Index: `stock_quantity`
+
+**Description**: Core product information including pricing, inventory, and basic details.
+
+### ProductCategory (Join Table)
+
+**Table Name**: `products_product_categories`
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | Integer | PK, Auto-increment | Unique identifier |
+| product_id | Integer | FK(products_product.id), Not Null | Product reference |
+| category_id | Integer | FK(products_category.id), Not Null | Category reference |
+
+**Indexes**:
+- Primary Key: `id`
+- Unique Index: `(product_id, category_id)`
+- Index: `product_id`
+- Index: `category_id`
+
+**Description**: Many-to-many relationship between products and categories.
+
+### ProductImage
+
+**Table Name**: `products_productimage`
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | Integer | PK, Auto-increment | Unique identifier |
+| product_id | Integer | FK(products_product.id), Not Null | Product reference |
+| image | Varchar(100) | Not Null | Image file path |
+| alt_text | Varchar(255) | | Alt text for image |
+| is_featured | Boolean | Default: False | Flag for featured image |
+| order | Integer | Default: 1 | Display order |
+
+**Indexes**:
+- Primary Key: `id`
+- Index: `product_id`
+- Index: `is_featured`
+
+**Description**: Stores multiple images for each product with display order and featured flag.
+
+### ProductVariation
+
+**Table Name**: `products_productvariation`
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | Integer | PK, Auto-increment | Unique identifier |
+| product_id | Integer | FK(products_product.id), Not Null | Product reference |
+| name | Varchar(100) | Not Null | Variation type (e.g. "Size") |
+| value | Varchar(100) | Not Null | Variation value (e.g. "Medium") |
+| price_adjustment | Decimal(10,2) | Default: 0 | Price difference |
+| stock_quantity | Integer | Default: 0 | Variation-specific stock |
+| sku | Varchar(50) | Unique, Not Null | Variation SKU |
+
+**Indexes**:
+- Primary Key: `id`
+- Unique Index: `(product_id, name, value)`
+- Unique Index: `sku`
+- Index: `product_id`
+
+**Description**: Product variations like size, color, etc., with specific pricing and inventory.
+
+### ProductReview
+
+**Table Name**: `products_productreview`
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | Integer | PK, Auto-increment | Unique identifier |
+| product_id | Integer | FK(products_product.id), Not Null | Product reference |
+| user_id | Integer | FK(authentication_user.id), Not Null | User reference |
+| rating | SmallInteger | Not Null | Rating (1-5) |
+| title | Varchar(255) | | Review title |
+| comment | Text | Not Null | Review text |
+| is_approved | Boolean | Default: False | Moderation status |
+| created_at | DateTime | Auto | Creation timestamp |
+| updated_at | DateTime | Auto | Last update timestamp |
+
+**Indexes**:
+- Primary Key: `id`
+- Unique Index: `(product_id, user_id)`
+- Index: `product_id`
+- Index: `user_id`
+- Index: `rating`
+- Index: `is_approved`
+
+**Description**: Customer reviews and ratings for products.
+
+---
+
+## Orders Module
+
+### Cart
+
+**Table Name**: `orders_cart`
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | Integer | PK, Auto-increment | Unique identifier |
+| user_id | Integer | FK(authentication_user.id), Nullable | User reference (if logged in) |
+| session_id | Varchar(255) | Nullable | Session reference (for guests) |
+| is_active | Boolean | Default: True | Active cart status |
+| created_at | DateTime | Auto | Creation timestamp |
+| updated_at | DateTime | Auto | Last update timestamp |
+
+**Indexes**:
+- Primary Key: `id`
+- Index: `user_id`
+- Index: `session_id`
+- Index: `is_active`
+
+**Description**: Shopping cart for both logged-in users and guest sessions.
+
+### CartItem
+
+**Table Name**: `orders_cartitem`
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | Integer | PK, Auto-increment | Unique identifier |
+| cart_id | Integer | FK(orders_cart.id), Not Null | Cart reference |
+| product_id | Integer | FK(products_product.id), Not Null | Product reference |
+| variation_id | Integer | FK(products_productvariation.id), Nullable | Product variation reference |
+| quantity | Integer | Default: 1, Check > 0 | Item quantity |
+
+**Indexes**:
+- Primary Key: `id`
+- Unique Index: `(cart_id, product_id, variation_id)`
+- Index: `cart_id`
+- Index: `product_id`
+- Index: `variation_id`
+
+**Description**: Individual items in a shopping cart with quantity and variation.
+
+### Order
+
+**Table Name**: `orders_order`
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | Integer | PK, Auto-increment | Unique identifier |
+| user_id | Integer | FK(authentication_user.id), Nullable | User reference |
+| status | Varchar(20) | Not Null | Order status |
+| shipping_address_id | Integer | FK(authentication_address.id), Nullable | Shipping address |
+| billing_address_id | Integer | FK(authentication_address.id), Nullable | Billing address |
+| shipping_method_id | Integer | FK(shipping_shippingmethod.id), Nullable | Shipping method |
+| tracking_number | Varchar(255) | Nullable | Shipping tracking number | 
+| subtotal | Decimal(10,2) | Not Null | Order subtotal |
+| shipping_cost | Decimal(10,2) | Not Null | Shipping cost |
+| tax | Decimal(10,2) | Not Null | Tax amount |
+| discount | Decimal(10,2) | Default: 0 | Discount amount |
+| total | Decimal(10,2) | Not Null | Total order amount |
+| notes | Text | Nullable | Order notes |
+| order_number | Varchar(20) | Unique, Not Null | Human-readable order number |
+| created_at | DateTime | Auto | Creation timestamp |
+| updated_at | DateTime | Auto | Last update timestamp |
+
+**Indexes**:
+- Primary Key: `id`
+- Unique Index: `order_number`
+- Index: `user_id`
+- Index: `status`
+- Index: `created_at`
+
+**Description**: Order header with summary information, shipping details, and status.
+
+### OrderItem
+
+**Table Name**: `orders_orderitem`
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | Integer | PK, Auto-increment | Unique identifier |
+| order_id | Integer | FK(orders_order.id), Not Null | Order reference |
+| product_id | Integer | FK(products_product.id), Nullable | Product reference |
+| variation_id | Integer | FK(products_productvariation.id), Nullable | Variation reference |
+| quantity | Integer | Default: 1, Check > 0 | Item quantity |
+| price | Decimal(10,2) | Not Null | Unit price at purchase time |
+| total_price | Decimal(10,2) | Not Null | Line item total |
+| product_name | Varchar(255) | Not Null | Product name at purchase time |
+| product_sku | Varchar(50) | Not Null | Product SKU at purchase time |
+| variation_name | Varchar(255) | Nullable | Variation at purchase time |
+
+**Indexes**:
+- Primary Key: `id`
+- Index: `order_id`
+- Index: `product_id`
+- Index: `variation_id`
+
+**Description**: Individual items in an order with snapshot of product information at purchase time.
+
+---
+
+## Payments Module
+
+### Payment
+
+**Table Name**: `payments_payment`
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | Integer | PK, Auto-increment | Unique identifier |
+| order_id | Integer | FK(orders_order.id), Not Null | Order reference |
+| amount | Decimal(10,2) | Not Null | Payment amount |
+| status | Varchar(20) | Not Null | Payment status |
+| payment_method | Varchar(20) | Not Null | Payment method used |
+| transaction_id | Varchar(255) | Nullable | Gateway transaction ID |
+| payment_details | JSON | Nullable | Gateway-specific details |
+| created_at | DateTime | Auto | Creation timestamp |
+| updated_at | DateTime | Auto | Last update timestamp |
+
+**Indexes**:
+- Primary Key: `id`
+- Index: `order_id`
+- Index: `status`
+- Index: `transaction_id`
+
+**Description**: Payment transactions for orders, supporting multiple payment attempts.
+
+### Refund
+
+**Table Name**: `payments_refund`
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | Integer | PK, Auto-increment | Unique identifier |
+| payment_id | Integer | FK(payments_payment.id), Not Null | Payment reference |
+| amount | Decimal(10,2) | Not Null | Refund amount |
+| reason | Text | Not Null | Reason for refund |
+| status | Varchar(20) | Not Null | Refund status |
+| refund_transaction_id | Varchar(255) | Nullable | Gateway refund transaction ID |
+| created_at | DateTime | Auto | Creation timestamp |
+| updated_at | DateTime | Auto | Last update timestamp |
+
+**Indexes**:
+- Primary Key: `id`
+- Index: `payment_id`
+- Index: `status`
+- Index: `refund_transaction_id`
+
+**Description**: Refund records for payments, supporting partial and full refunds.
+
+---
+
+## Shipping Module
+
+### ShippingMethod
+
+**Table Name**: `shipping_shippingmethod`
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | Integer | PK, Auto-increment | Unique identifier |
+| name | Varchar(100) | Not Null | Method name |
+| description | Text | Nullable | Method description |
+| price | Decimal(10,2) | Not Null | Base shipping price |
+| is_active | Boolean | Default: True | Active status |
+| delivery_time | Varchar(100) | Not Null | Estimated delivery time |
+| created_at | DateTime | Auto | Creation timestamp |
+| updated_at | DateTime | Auto | Last update timestamp |
+
+**Indexes**:
+- Primary Key: `id`
+- Index: `is_active`
+
+**Description**: Shipping methods offered (e.g., Standard, Express, Overnight).
+
+### ShippingZone
+
+**Table Name**: `shipping_shippingzone`
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | Integer | PK, Auto-increment | Unique identifier |
+| name | Varchar(100) | Not Null | Zone name (e.g., "North America") |
+| countries | JSON | Not Null | List of country codes |
+| regions | JSON | Nullable | Optional list of regions/states |
+
+**Indexes**:
+- Primary Key: `id`
+
+**Description**: Geographic zones for shipping calculation.
+
+### ShippingRate
+
+**Table Name**: `shipping_shippingrate`
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | Integer | PK, Auto-increment | Unique identifier |
+| shipping_method_id | Integer | FK(shipping_shippingmethod.id), Not Null | Method reference |
+| shipping_zone_id | Integer | FK(shipping_shippingzone.id), Not Null | Zone reference |
+| price | Decimal(10,2) | Not Null | Zone-specific shipping rate |
+| min_order_value | Decimal(10,2) | Default: 0 | Minimum order subtotal |
+| max_order_value | Decimal(10,2) | Nullable | Maximum order subtotal |
+
+**Indexes**:
+- Primary Key: `id`
+- Unique Index: `(shipping_method_id, shipping_zone_id, min_order_value)`
+- Index: `shipping_method_id`
+- Index: `shipping_zone_id`
+
+**Description**: Pricing rules for shipping methods based on zones and order value.
+
+---
+
+## Analytics Module
+
+**Note**: The specific analytics tables will depend on the reporting needs, but here are some examples:
+
+### ProductView
+
+**Table Name**: `analytics_productview`
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | Integer | PK, Auto-increment | Unique identifier |
+| product_id | Integer | FK(products_product.id), Not Null | Product reference |
+| user_id | Integer | FK(authentication_user.id), Nullable | User reference (if logged in) |
+| session_id | Varchar(255) | Nullable | Session ID (for guests) |
+| ip_address | Varchar(39) | Nullable | Viewer's IP address |
+| user_agent | Text | Nullable | Browser user agent |
+| referrer | Varchar(255) | Nullable | Referring URL |
+| viewed_at | DateTime | Auto | View timestamp |
+
+**Indexes**:
+- Primary Key: `id`
+- Index: `product_id`
+- Index: `user_id`
+- Index: `session_id`
+- Index: `viewed_at`
+
+**Description**: Tracks product page views for analytics.
+
+### SalesAggregate (Example)
+
+**Table Name**: `analytics_salesaggregate`
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | Integer | PK, Auto-increment | Unique identifier |
+| date | Date | Not Null | Aggregation date |
+| product_id | Integer | FK(products_product.id), Nullable | Product reference |
+| category_id | Integer | FK(products_category.id), Nullable | Category reference |
+| order_count | Integer | Default: 0 | Number of orders |
+| item_count | Integer | Default: 0 | Number of items sold |
+| revenue | Decimal(12,2) | Default: 0 | Total revenue |
+| cost | Decimal(12,2) | Default: 0 | Total cost |
+| profit | Decimal(12,2) | Default: 0 | Total profit |
+
+**Indexes**:
+- Primary Key: `id`
+- Index: `date`
+- Index: `product_id`
+- Index: `category_id`
+
+**Description**: Aggregated sales data for reporting, can be populated by a scheduled job.
+
+---
+
+## Database Relationships
+
+### Entity Relationship Diagram
+
+Below is a simplified representation of key relationships in the database:
+
+```
+User 1--* Address
+User 1--* Order
+User 1--* ProductReview
+User 1--* Cart
+
+Product *--* Category
+Product 1--* ProductImage
+Product 1--* ProductVariation
+Product 1--* ProductReview
+Product 1--* CartItem
+Product 1--* OrderItem
+
+Cart 1--* CartItem
+
+Order 1--* OrderItem
+Order 1--* Payment
+Order *--1 ShippingMethod
+
+Payment 1--* Refund
+
+ShippingMethod *--* ShippingZone (via ShippingRate)
+```
+
+---
+
+## Indexing Strategy
+
+The database indexing strategy focuses on:
+
+1. **Primary Keys**: Every table has an auto-incrementing primary key
+2. **Foreign Keys**: All foreign key columns are indexed
+3. **Unique Constraints**: Columns with unique constraints are indexed
+4. **Query Performance**: Additional indexes on frequently queried columns
+5. **Composite Indexes**: For tables with multiple filter conditions
+
+Common query patterns and their indexes:
+
+- Product search: Indexes on `name`, `is_active`, and category relationships
+- Order lookup: Indexes on `order_number`, `user_id`, `status`, and date range filters
+- Inventory management: Indexes on `stock_quantity` for low stock reports
+- Sales analysis: Indexes on date columns and product relationships
+
+---
+
+## Data Migration Strategy
+
+### Initial Setup
+
+1. **Create tables in dependency order**:
+   - Authentication module first (User)
+   - Products module (Categories, then Products)
+   - Shipping module
+   - Orders module
+   - Payments module
+   - Analytics module
+
+### Schema Updates
+
+For future schema updates:
+
+1. **Create Django migrations**:
+   ```bash
+   python manage.py makemigrations
+   ```
+
+2. **Run migrations with zero downtime approach**:
+   - For additive changes (new tables, columns): Apply directly
+   - For destructive changes (dropping columns): Use multiple deployments
+     1. Deploy code that doesn't use the column
+     2. Apply migration to remove the column
+   - For data-type changes: Use temporary columns
+
+3. **Data Backfilling**:
+   - For large tables, use batch processing
+   - Consider using Django's `RunPython` in migrations for data transforms
+
+### Data Import/Export
+
+For importing existing data:
+
+1. **CSV Import**:
+   - Create Django management commands for imports
+   - Support incremental imports to prevent duplicates
+
+2. **Database Dumps**:
+   - Use PostgreSQL-specific tools like `pg_dump` for full database backups
+   - Create scheduled backup jobs
+
+---
+
+This database documentation provides a comprehensive reference for developers working with the e-commerce backend API. The schema design balances normalization for data integrity with practical considerations for query performance.
